@@ -1,0 +1,135 @@
+function Get-RDMDisk
+{
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true,
+        ParameterSetName     = 'VMName')]
+        [System.String[]] 
+        $VMName,
+
+        [Parameter(Mandatory = $true,
+        ValueFromPipeline    = $true,
+        ParameterSetName     = 'VMObject')]
+        [VMware.VimAutomation.ViCore.Types.V1.Inventory.VirtualMachine[]]
+        $VM,
+
+        [System.String] 
+        $ReportPath
+    )
+
+    begin
+    {
+        Write-Verbose "$(Get-Date) Get-RDMDisk Started execution"
+        
+        [System.Collections.ArrayList]$alReport = [System.Collections.ArrayList]::New()       
+    }
+
+    process
+    {
+        if ($VMName)
+        {
+            $vmList = $VMName
+        }
+        else
+        {
+            $vmList = $VM
+        }      
+        
+        foreach ($vmItem in $vmList)
+        {
+            Write-Verbose "$(Get-Date) Get-RDMDisk Started collect data about VM $($vmView.Name)"
+            
+            switch ($vmItem.GetType().Name)
+            {
+                'VirtualMachineImpl' {$vmView = Get-View -ViewType VirtualMachine -Filter @{"Name" = $vmItem.Name}}
+                'String'             {$vmView = Get-View -ViewType VirtualMachine -Filter @{"Name" = $vmItem}}
+            }
+            
+            $hostView       = Get-View -Id $vmView.Runtime.Host
+            $datacenterView = Get-View -Id $hostView.Parent
+
+            do
+            {
+                $datacenterView = Get-View -Id $datacenterView.Parent
+            }
+            while ($datacenterView.MoRef.Type -ne 'Datacenter' -and $datacenterView)
+
+            $hostLun = $hostView.Config.StorageDevice.ScsiLun
+            $hostMP  = $hostView.Config.StorageDevice.MultipathInfo.Lun
+            
+            $hddList = $vmView.Config.Hardware.Device | Where-Object {$_.Backing -match 'DiskRaw'}
+            $osName  = $vmView.Config.GuestFullName
+
+            $projectName = ''
+            $projectKey  = ($vmView.AvailableField | Where-Object {$_.Name -like 'ProjectName'}).Key
+            $projectName = ($vmView.Summary.CustomValue | Where-Object {$_.Key -like $projectKey}).Value
+            
+            if (!($projectName))
+            {
+                $projectName = $datacenterView.Name
+            }
+            
+            foreach ($hdd in $hddList)
+            {
+                $lun            = $hostLun | Where-Object {$_.Uuid -like $hdd.Backing.DeviceName.Replace('vml.', '')}
+                $lunID          = ($hostMP | Where-Object {$_.Lun -eq $lun.Key}).Path[0].Name.Split(',')[0].Split(':')[-1].Replace('L','')
+                $lunMPShortName = ($hostMP | Where-Object {$_.Lun -eq $lun.Key}).Policy.Policy.Split('_')[-1]
+                    
+                switch ($lunMPShortName)
+                {
+                    'RR' {$lunMPFullName = 'Round Robin'}
+                    'MRU'{$lunMPFullName = 'Most Recently Used'}
+                }
+                    
+                $fileName           = $hdd.Backing.FileName.Split(' ')[-1]
+                $datastoreName      = $hdd.Backing.FileName.Split(' ')[0].Replace('[','').Replace(']','')
+                $scsiControllerKey  = $hdd.ControllerKey
+                $scsiControllerView = $vmView.Config.Hardware.Device | Where-Object {$_.Key -like $scsiControllerKey}
+
+                $htReport = [PSCustomObject][Ordered]@{VM_NAME              = $vmView.Name
+                                                       PROJECT              = $projectName
+                                                       OS                   = $osName
+                                                       SCSI_CONTROLLER_NAME = $scsiControllerView.DeviceInfo.Label
+                                                       HDD_UNIT_NUMBER      = $hdd.UnitNumber
+                                                       CANONICAL_NAME       = $Lun.CanonicalName                                                     
+                                                       LUN_ID               = $lunID
+                                                       MP_POLICY            = $lunMPFullName
+                                                       HDD_CAPACITY_GB      = [System.Math]::Round($hdd.CapacityInKB / 1MB, 2)
+                                                       HDD_TYPE             = $hdd.Backing.CompatibilityMode.Replace('Mode','')
+                                                       HDD_NAME             = $hdd.DeviceInfo.Label
+                                                       DATASTORE            = $datastoreName
+                                                       FILE_NAME            = $fileName
+                                                       STORAGE_DEVICE_NAME  = $lun.DisplayName}
+                $alReport.Add($htReport) | Out-Null
+            }
+            
+            Write-Verbose "$(Get-Date) Get-RDMDisk Finished collect data about VM $($vmView.Name)"        
+        }
+        
+        if ($ReportPath -ne '')
+        {
+            try
+            {
+                Write-Verbose "$(Get-Date) Get-RDMDisk Started export to file $ReportPath"
+
+                $alReport | Export-Csv -Path $ReportPath -NoTypeInformation -Encoding UTF8 -Delimiter ';'
+
+                Write-Verbose "$(Get-Date) Get-RDMDisk Finished export to file $ReportPath"
+            }
+            catch
+            {
+                Write-Verbose "$(Get-Date) Get-RDMDisk Failed export to file $ReportPath"
+
+                $Error[0]
+            }            
+        }
+        $alReport
+    }
+
+    end
+    {
+        Write-Verbose "$(Get-Date) Get-RDMDisk	Finished execution"
+
+        $alReport.Clear()
+    }
+}
