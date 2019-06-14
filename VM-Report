@@ -93,6 +93,8 @@ function Get-RDMDisk
                                                        HDD_UNIT_NUMBER      = $hdd.UnitNumber
                                                        CANONICAL_NAME       = $Lun.CanonicalName                                                     
                                                        LUN_ID               = $lunID
+                                                       LUN_VENDOR           = $Lun.Vendor
+                                                       LUN_MODEL            = $Lun.Model
                                                        MP_POLICY            = $lunMPFullName
                                                        HDD_CAPACITY_GB      = [System.Math]::Round($hdd.CapacityInKB / 1MB, 2)
                                                        HDD_TYPE             = $hdd.Backing.CompatibilityMode.Replace('Mode','')
