@@ -26,7 +26,6 @@ function Get-RDMDisk
         [System.String]$strRoundRobin           = 'Round Robin'
         [System.String]$strMRU                  = 'Most Recently Used'
     }
-
     process
     {
         switch ($PSCmdlet.ParameterSetName)
@@ -61,7 +60,7 @@ function Get-RDMDisk
             $hostLun = $hostView.Config.StorageDevice.ScsiLun
             $hostMP  = $hostView.Config.StorageDevice.MultipathInfo.Lun
             
-            $hddList = $vmView.Config.Hardware.Device | Where-Object {$_.Backing -match 'DiskRaw'}
+            $hddList = $vmView.Config.Hardware.Device | Where-Object {$_.GetType().Name -match 'VirtualDisk'} | Where-Object {$_.Backing.GetType().Name -match 'VirtualDiskRaw'}
             $osName  = $vmView.Config.GuestFullName
 
             $projectKey  = ($vmView.AvailableField | Where-Object {$_.Name -like 'ProjectName'}).Key
@@ -82,7 +81,7 @@ function Get-RDMDisk
                 {                    
                     Write-Verbose "$(Get-Date) Get-RDMDisk    Started collect data about RDM disk $($hdd.DeviceInfo.Label) on VM $($vmView.Name)"
                     
-                    $lun            = $hostLun | Where-Object {$_.Uuid -like $hdd.Backing.DeviceName.Replace('vml.', '')}
+                    $lun            = $hostLun | Where-Object {$_.Uuid -like $hdd.Backing.LunUuid}
                     $lunID          = ($hostMP | Where-Object {$_.Lun -eq $lun.Key}).Path[0].Name.Split(',')[0].Split(':')[-1].Replace('L','')
                     $lunMPShortName = ($hostMP | Where-Object {$_.Lun -eq $lun.Key}).Policy.Policy.Split('_')[-1]
                     
