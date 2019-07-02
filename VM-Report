@@ -208,3 +208,54 @@ function Find-HostBySerialNumber
         $alReport.Clear()
     }
 }
+
+function Find-VMbyIP
+{
+[CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [System.String[]] 
+        $IPAddress
+    )
+
+    begin
+    {
+        Write-Verbose "$(Get-Date) Find-VMbyIP    Started execution"
+        
+        [System.Collections.ArrayList]$alReport = [System.Collections.ArrayList]::New()
+    }
+
+    process
+    {        
+        $vmViewList = Get-View -ViewType VirtualMachine -Property Guest.Net
+        foreach ($vmView in $vmViewList)
+        {
+            foreach ($netAdapter in $vmView.Guest.Net)
+            {
+                foreach ($ip in $netAdapter.IpConfig.IpAddress)
+                {                        
+                    foreach ($item in $IPAddress)
+                    {
+                        if ($ip.IpAddress -like $item)
+                        {
+                            $findedVm = Get-View -Id $vmView.MoRef
+                            $htReport = [PSCustomObject][Ordered]@{HOST_NAME   = $findedVm.Name
+                                                                    POWER_STATE = $findedVm.Runtime.PowerState
+                                                                    IP_ADDRESS  = $item}
+                            $alReport.Add($htReport) | Out-Null
+                        }
+                    }
+                }
+            }
+        }
+
+        $alReport
+    }
+
+    end
+    {
+        Write-Verbose "$(Get-Date) Find-VMbyIP     Finished execution"
+
+        $alReport.Clear()
+    }
+}
