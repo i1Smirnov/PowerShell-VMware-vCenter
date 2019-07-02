@@ -157,3 +157,54 @@ function Get-RDMDisk
         $alReport.Clear()
     }
 }
+
+function Find-HostBySerialNumber
+{
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [System.String[]] 
+        $SerialNumber
+    )
+
+    begin
+    {
+        Write-Verbose "$(Get-Date) Find-HostBySerialNumber    Started execution"
+        
+        [System.Collections.ArrayList]$alReport = [System.Collections.ArrayList]::New()
+    }
+
+    process
+    {
+        $vmHostViewList = Get-View -ViewType HostSystem -Property Hardware.SystemInfo.OtherIdentifyingInfo
+        
+        foreach ($vmHostView in $vmHostViewList)
+        {
+            [System.String]$findedSN = ''
+            $findedSN = ($vmHostView.Hardware.SystemInfo.OtherIdentifyingInfo | Where-Object {$_.IdentifierType.Key -like 'EnclosureSerialNumberTag'}).IdentifierValue
+            
+            foreach ($item in $SerialNumber)
+            {
+                if ($findedSN -like $item)
+                {
+                    $findedVmHost = Get-View -Id $vmHostView.MoRef
+                    $htReport = [PSCustomObject][Ordered]@{HOST_NAME          = $findedVmHost.Name
+                                                           POWER_STATE        = $findedVmHost.Runtime.PowerState
+                                                           CONNECTION_STATE   = $findedVmHost.Runtime.ConnectionState
+                                                           IN_MANTENANCE_MODE = $findedVmHost.Runtime.InMaintenanceMode
+                                                           SERIAL_NUMBER      = $item}
+                    $alReport.Add($htReport) | Out-Null
+                }    
+            }
+        }
+
+        $alReport
+    }
+    
+    end
+    {
+        Write-Verbose "$(Get-Date) Find-HostBySerialNumber     Finished execution"
+
+        $alReport.Clear()
+    }
+}
