@@ -26,6 +26,7 @@ function Get-RDMDisk
         [System.String]$strRoundRobin           = 'Round Robin'
         [System.String]$strMRU                  = 'Most Recently Used'
     }
+
     process
     {
         switch ($PSCmdlet.ParameterSetName)
@@ -42,8 +43,8 @@ function Get-RDMDisk
             
             switch ($vmItem.GetType().Name)
             {
-                'VirtualMachineImpl' {$vmView = Get-View -ViewType VirtualMachine -Filter @{"Name" = $vmItem.Name}}
-                'String'             {$vmView = Get-View -ViewType VirtualMachine -Filter @{"Name" = $vmItem}}
+                'UniversalVirtualMachineImpl' {$vmView = Get-View -Id $vmItem.Id | Where-Object {$_.Name -like $vmItem.Name}}
+                'String'                      {$vmView = Get-View -ViewType VirtualMachine -Filter @{"Name" = $vmItem} | Where-Object {$_.Name -like $vmItem}}
             }
 
             Write-Verbose "$(Get-Date) Get-RDMDisk    Started collect data about VM $($vmView.Name)"
