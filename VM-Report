@@ -240,8 +240,8 @@ function Find-VMbyIP
                         {
                             $findedVm = Get-View -Id $vmView.MoRef
                             $htReport = [PSCustomObject][Ordered]@{HOST_NAME   = $findedVm.Name
-                                                                    POWER_STATE = $findedVm.Runtime.PowerState
-                                                                    IP_ADDRESS  = $item}
+                                                                   POWER_STATE = $findedVm.Runtime.PowerState
+                                                                   IP_ADDRESS  = $item}
                             $alReport.Add($htReport) | Out-Null
                         }
                     }
