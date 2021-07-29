@@ -1,0 +1,207 @@
+begin
+{
+    Clear-Host
+
+    [System.Collections.ArrayList]$alRdmReport = [System.Collections.ArrayList]::New()
+    [System.Collections.ArrayList]$alDsReport  = [System.Collections.ArrayList]::New()
+    [System.Collections.ArrayList]$alLunReport = [System.Collections.ArrayList]::New()
+
+    ###############################################################
+    [System.String]$VIServer       = ''
+    [System.String]$datacenterName = ''
+    [System.String]$sharePath      = ''
+    ###############################################################
+
+    [System.String]$executeDate       = (Get-Date -Format yyyy-MM-dd-HH-mm).ToString()
+    [System.String]$scriptName        = $MyInvocation.MyCommand.Name.Replace('.ps1', '')
+    [System.String]$reportFilePath    = $sharePath + "_output_" + $scriptName + "_" + $datacenterName + '_' + $executeDate + ".csv"
+    [System.String]$reportRDMFilePath = $sharePath + "_output_RDM_" + $datacenterName + "_" + $executeDate + ".csv"
+    [System.String]$reportDSFilePath  = $sharePath + "_output_SAN-DS_" + $datacenterName + "_" + $executeDate + ".csv"
+    [System.String]$reportLUNFilePath = $sharePath + "_output_LUN_" + $datacenterName + "_" + $executeDate + ".csv"
+    [System.String]$logFilePath       = $sharePath + "_log____" + $scriptName + "_" + $executeDate + ".txt"
+
+    if (!(Test-Path $sharePath))
+    {
+        Write-Host -ForegroundColor Red "Script $scriptName can not be started. The report path $sharePath is not valid. Check it and restart the script"
+    }
+    
+    Write-Host -ForegroundColor Yellow "Script $scriptName is started"
+
+    [System.String[]]$strDCProperty = 'Name'
+    [System.String[]]$strVMProperty = 'Name', 'Config.Hardware.Device'
+    [System.String[]]$strDSProperty = 'Summary', 'Info'
+    [System.String[]]$strHSProperty = 'Name', 'Parent', 'Config.StorageDevice.ScsiLun'
+    [System.String[]]$strClProperty = 'Name'
+
+    [System.Collections.Hashtable]$htDCFilter = @{'Name' = "^$($datacenterName)$"}
+    [System.Collections.Hashtable]$htVMFilter = @{'Name' = "^((?!^Gue|^Tre|^Kas|avsla).)*$"}
+    [System.Collections.Hashtable]$htDSFilter = @{'Summary.Type' = "VMFS"}
+
+    $datacenterView    = Get-View -ViewType Datacenter `
+                                  -Property $strDCProperty `
+                                  -Filter $htDCFilter `
+                                  -Server $VIServer
+                  
+    $vmViewList        = Get-View -ViewType VirtualMachine `
+                                  -Property $strVMProperty `
+                                  -Filter $htVMFilter `
+                                  -SearchRoot $datacenterView.MoRef `
+                                  -Server $VIServer
+
+    $datastoreViewList = Get-View -ViewType Datastore `
+                                  -Property $strDSProperty `
+                                  -Filter $htDSFilter `
+                                  -SearchRoot $datacenterView.MoRef `
+                                  -Server $VIServer | Where-Object -FilterScript {$_.Info.Vmfs.Local -like 'False'}
+
+    $hostViewList      = Get-View -ViewType HostSystem `
+                                  -Property $strHSProperty `
+                                  -SearchRoot $datacenterView.MoRef `
+                                  -Server $VIServer
+}
+
+process
+{
+    Write-Host -ForegroundColor Yellow "`n`tCollect data about RDM disks is started"
+    
+    foreach ($vmView in $vmViewList)
+    {    
+        $hddList = $vmView.Config.Hardware.Device | Where-Object -FilterScript {($_.GetType().Name -like 'VirtualDisk') -and ($_.Backing -match 'VirtualDiskRaw')}
+
+        foreach ($hdd in $hddList)
+        {       
+            $rdmSCN = 'N/A'
+        
+            try
+            {
+                $rdmSCN = 'naa.' + $hdd.Backing.DeviceName.Substring(14, 32)
+            }
+            catch [System.Management.Automation.MethodInvocationException]
+            {
+                $rdmSCN = 'naa.' + $hdd.Backing.DeviceName.Substring(14, 16)
+            }
+        
+            $htRdmReport = [PSCustomObject][Ordered]@{VM_NAME   = $vmView.Name
+                                                      HDD_LABEL = $hdd.DeviceInfo.Label
+                                                      RDM_VML   = $hdd.Backing.DeviceName
+                                                      RDM_SCN   = $rdmSCN
+                                                      LUN_UUID  = $hdd.Backing.LunUuid}
+                
+            $alRdmReport.Add($htRdmReport) | Out-Null          
+        }    
+    }
+
+    Write-Host -ForegroundColor Green "`tCollect data about RDM disks is finished"
+    Write-Host -ForegroundColor Yellow "`n`tCollect data about datastores is started"
+
+    foreach ($datastoreView in $datastoreViewList)
+    {       
+        $htDsReport = [PSCustomObject][Ordered]@{DS_NAME        = $datastoreView.Info.Vmfs.Name
+                                                 DS_SCN         = $datastoreView.Info.Vmfs.Extent[0].DiskName
+                                                 DS_ACCESSIBLE  = $datastoreView.Summary.Accessible
+                                                 DS_MAINTENANCE = $datastoreView.Summary.MaintenanceMode}
+                
+        $alDsReport.Add($htDsReport) | Out-Null 
+    }
+
+    Write-Host -ForegroundColor Green "`tCollect data about datastores is finished"
+    Write-Host -ForegroundColor Yellow "`n`tCollect data about LUN is started"
+
+    foreach ($hostView in $hostViewList)
+    {  
+        $clusterView = Get-View -Id $hostView.Parent `
+                                -Property $strClProperty `
+                                -Server $VIServer
+
+        $hostLunList = $hostView.Config.StorageDevice.ScsiLun | Where-Object -FilterScript {$_.LocalDisk -like 'False'}
+    
+        foreach ($hostLun in $hostLunList)
+        {
+            switch ($hostLun.OperationalState[0])
+            {
+                'ok'  {$operationalState = 'Attached'}
+                'off' {$operationalState = 'Detached'}
+            }
+        
+            $rdmCounter = 0
+            $dsCounter  = 0
+        
+            $rdmCounter = ($alRdmReport.Where({$_.RDM_SCN -like $hostLun.CanonicalName})).Count
+            $dsCounter  = ($alDsReport.Where({$_.DS_SCN -like $hostLun.CanonicalName})).Count
+
+            $htLunReport = [PSCustomObject][Ordered]@{HOST_NAME       = $hostView.Name
+                                                      CLUSTER_NAME    = $clusterView.Name
+                                                      LUN_VENDOR      = $hostLun.Vendor
+                                                      LUN_NAME        = $hostLun.DisplayName
+                                                      LUN_SCN         = $hostLun.CanonicalName
+                                                      LUN_VML         = $hostLun.Descriptor.Where({$_.Id -match '^vml'}).Id
+                                                      LUN_UUID        = $hostLun.Uuid
+                                                      LUN_CAPACITY_GB = [System.Math]::Round($hostLun.Capacity.Block * $hostLun.Capacity.BlockSize / 1GB, 2)
+                                                      LUN_STATE       = $operationalState
+                                                      ENGAGED_BY_VM   = $rdmCounter
+                                                      ENGAGED_BY_DS   = $dsCounter}
+
+            $alLunReport.Add($htLunReport) | Out-Null
+        }
+    }
+
+    Write-Host -ForegroundColor Green "`tCollect data about LUN is finished"
+
+    try
+    {
+        $report = $alLunReport.Where({($_.ENGAGED_BY_VM -eq 0) -and ($_.ENGAGED_BY_DS -eq 0)})
+
+        $report `
+            | Select-Object -Property LUN_SCN, LUN_STATE `
+            | Sort-Object -Property LUN_SCN -Unique `
+            | Export-Csv -Path $reportFilePath -Encoding UTF8 -Delimiter ';' -NoTypeInformation
+
+        $alRdmReport | Export-Csv -Path $reportRDMFilePath -Encoding UTF8 -Delimiter ';' -NoTypeInformation
+        $alDsReport  | Export-Csv -Path $reportDSFilePath  -Encoding UTF8 -Delimiter ';' -NoTypeInformation
+        $alLunReport | Export-Csv -Path $reportLUNFilePath -Encoding UTF8 -Delimiter ';' -NoTypeInformation
+    }
+    catch
+    {
+        $error[0].Exception | Out-File -FilePath $logFilePath -Append
+    }
+}
+
+end
+{
+    if (Test-Path -Path $reportFilePath)
+    {
+        Write-Host -ForegroundColor Green "`nScript $scriptName is completed."
+
+        Write-Host -ForegroundColor Cyan "`n`tCount of attached non mapped LUNs is     - $(($report `
+                                                                                                | Where-Object -Property LUN_STATE -Like 'Attached' `
+                                                                                                | Select-Object -Property LUN_SCN `
+                                                                                                | Sort-Object -Property LUN_SCN -Unique `
+                                                                                                | Measure-Object).Count)"
+        Write-Host -ForegroundColor Cyan "`tCount of detached non mapped LUNs is     - $(($report `
+                                                                                            | Where-Object -Property LUN_STATE -Like 'Detached' `
+                                                                                            | Select-Object -Property LUN_SCN `
+                                                                                            | Sort-Object -Property LUN_SCN -Unique `
+                                                                                            | Measure-Object).Count)"
+        Write-Host -ForegroundColor Cyan "`tCapacity in GB of all non mapped LUNs is - $(($report `
+                                                                                            | Select-Object -Property LUN_SCN, LUN_CAPACITY_GB -Unique `
+                                                                                            | Measure-Object -Property LUN_CAPACITY_GB -Sum).Sum)"
+
+        Write-Host -ForegroundColor Cyan "`n`tThe main report file is here      - $reportFilePath"
+        Write-Host -ForegroundColor Cyan "`tThe RDM report file is here       - $reportRDMFilePath"
+        Write-Host -ForegroundColor Cyan "`tThe Datastore report file is here - $reportDSFilePath"
+        Write-Host -ForegroundColor Cyan "`tThe LUN report file is here       - $reportLUNFilePath"
+        Write-Host -ForegroundColor Cyan "`tThe log file is here              - $logFilePath"
+
+        $report `
+            | Select-Object -Property LUN_SCN, LUN_STATE `
+            | Sort-Object -Property LUN_SCN -Unique
+    }
+    else
+    {
+        Write-Host -ForegroundColor Red "Script $scriptName was not completed."
+    }
+    
+    $alRdmReport.Clear()
+    $alDsReport.Clear()
+    $alLunReport.Clear()
+}
