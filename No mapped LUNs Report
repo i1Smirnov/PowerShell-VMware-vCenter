@@ -198,7 +198,7 @@ end
     }
     else
     {
-        Write-Host -ForegroundColor Red "Script $scriptName was not completed."
+        Write-Host -ForegroundColor Red "`nScript $scriptName was not completed."
     }
     
     $alRdmReport.Clear()
