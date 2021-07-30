@@ -1,0 +1,79 @@
+begin
+{
+    Clear-Host
+
+    [System.Collections.ArrayList]$alReport = [System.Collections.ArrayList]::New()
+
+    ###############################################################
+    [System.String]$VIServer       = ''
+    [System.String]$datacenterName = ''
+    [System.String]$sharePath      = ''
+    ###############################################################
+
+    [System.String]$executeDate      = (Get-Date -Format yyyy-MM-dd-HH-mm).ToString()
+    [System.String]$scriptName       = $MyInvocation.MyCommand.Name.Replace('.ps1', '')
+    [System.String]$logFilePath      = $sharePath + "_log____" + $scriptName + "_" + $executeDate + ".txt"
+    [System.Int16]$iterrationCounter = 1
+
+    if (!(Test-Path $sharePath))
+    {
+        Write-Host -ForegroundColor Red "Script $scriptName can not be started. The report path $sharePath is not valid. Check it and restart the script"
+    }
+    
+    Write-Host -ForegroundColor Yellow "Script $scriptName is started"
+
+    [System.String[]]$strDCProperty = 'Name'
+    [System.String[]]$strHSProperty = 'Name', 'ConfigManager.StorageSystem'
+
+    [System.Collections.Hashtable]$htDCFilter = @{'Name' = "^$($datacenterName)$"}
+
+    $datacenterView    = Get-View -ViewType Datacenter `
+                                  -Property $strDCProperty `
+                                  -Filter $htDCFilter `
+                                  -Server $VIServer
+
+    $hostViewList      = Get-View -ViewType HostSystem `
+                                  -Property $strHSProperty `
+                                  -SearchRoot $datacenterView.MoRef `
+                                  -Server $VIServer
+}
+
+process
+{
+    foreach ($hostView in $hostViewList)
+    {   
+        $systemStorageView = Get-View -Id $hostView.ConfigManager.StorageSystem -Server $VIServer
+        try
+        {
+            Write-Host -ForegroundColor Yellow "`n$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan is started"
+            
+            $systemStorageView.RefreshStorageSystem()
+            $systemStorageView.RescanAllHba()
+            $systemStorageView.RescanVmfs()
+
+            Start-Sleep -Seconds 5
+
+            Write-Host -ForegroundColor Green "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan was finished"
+        }
+        catch
+        {
+            Write-Host -ForegroundColor Red "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    was failed. Exception - $($error[0].Exception)"
+            
+            Return
+        }
+    
+        $iterrationCounter++
+    }
+}
+
+end
+{
+    if (!(Test-Path -Path $logFilePath))
+    {
+        Write-Host -ForegroundColor Green "`nScript $scriptName is completed."
+    }
+    else
+    {
+        Write-Host -ForegroundColor Red "`nScript $scriptName was not completed."
+    }
+}
