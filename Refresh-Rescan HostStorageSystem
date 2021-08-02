@@ -5,9 +5,9 @@ begin
     [System.Collections.ArrayList]$alReport = [System.Collections.ArrayList]::New()
 
     ###############################################################
-    [System.String]$VIServer       = ''
-    [System.String]$datacenterName = ''
-    [System.String]$sharePath      = ''
+    [System.String]$VIServer       = '10.7.30.10'
+    [System.String]$datacenterName = 'Datacenter-DC01-PROD-01'
+    [System.String]$sharePath      = '\\vdc01-mevum--01\t$\_Stat\'
     ###############################################################
 
     [System.String]$executeDate      = (Get-Date -Format yyyy-MM-dd-HH-mm).ToString()
@@ -42,13 +42,13 @@ process
 {
     foreach ($hostView in $hostViewList)
     {   
-        $systemStorageView = Get-View -Id $hostView.ConfigManager.StorageSystem -Server $VIServer
+        $storageSystemView = Get-View -Id $hostView.ConfigManager.StorageSystem -Server $VIServer
 
         try
         {
             Write-Host -ForegroundColor Yellow "`n$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Refresh storage system is started"
             
-            $systemStorageView.RefreshStorageSystem()
+            $storageSystemView.RefreshStorageSystem()
 
             Write-Host -ForegroundColor Green "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Refresh storage system was finished"
         }
@@ -63,7 +63,7 @@ process
         {
             Write-Host -ForegroundColor Yellow "`n$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan all HBA is started"
             
-            $systemStorageView.RescanAllHba()
+            $storageSystemView.RescanAllHba()
 
             Write-Host -ForegroundColor Green "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan all HBA was finished"
         }
@@ -78,7 +78,7 @@ process
         {
             Write-Host -ForegroundColor Yellow "`n$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan VMFS is started"
             
-            $systemStorageView.RescanVmfs()
+            $storageSystemView.RescanVmfs()
 
             Write-Host -ForegroundColor Green "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan VMFS was finished"
         }
