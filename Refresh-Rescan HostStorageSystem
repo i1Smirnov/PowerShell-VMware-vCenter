@@ -27,15 +27,15 @@ begin
 
     [System.Collections.Hashtable]$htDCFilter = @{'Name' = "^$($datacenterName)$"}
 
-    $datacenterView    = Get-View -ViewType Datacenter `
-                                  -Property $strDCProperty `
-                                  -Filter $htDCFilter `
-                                  -Server $VIServer
+    $datacenterView = Get-View -ViewType Datacenter `
+                               -Property $strDCProperty `
+                               -Filter $htDCFilter `
+                               -Server $VIServer
 
-    $hostViewList      = Get-View -ViewType HostSystem `
-                                  -Property $strHSProperty `
-                                  -SearchRoot $datacenterView.MoRef `
-                                  -Server $VIServer
+    $hostViewList   = Get-View -ViewType HostSystem `
+                               -Property $strHSProperty `
+                               -SearchRoot $datacenterView.MoRef `
+                               -Server $VIServer
 }
 
 process
@@ -43,25 +43,54 @@ process
     foreach ($hostView in $hostViewList)
     {   
         $systemStorageView = Get-View -Id $hostView.ConfigManager.StorageSystem -Server $VIServer
+
         try
         {
-            Write-Host -ForegroundColor Yellow "`n$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan is started"
+            Write-Host -ForegroundColor Yellow "`n$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Refresh storage system is started"
             
             $systemStorageView.RefreshStorageSystem()
-            $systemStorageView.RescanAllHba()
-            $systemStorageView.RescanVmfs()
 
-            Start-Sleep -Seconds 5
-
-            Write-Host -ForegroundColor Green "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan was finished"
+            Write-Host -ForegroundColor Green "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Refresh storage system was finished"
         }
         catch
         {
-            Write-Host -ForegroundColor Red "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    was failed. Exception - $($error[0].Exception)"
+            Write-Host -ForegroundColor Red "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Refresh storage system was failed. Exception - $($error[0].Exception)"
             
             Return
         }
-    
+
+        try
+        {
+            Write-Host -ForegroundColor Yellow "`n$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan all HBA is started"
+            
+            $systemStorageView.RescanAllHba()
+
+            Write-Host -ForegroundColor Green "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan all HBA was finished"
+        }
+        catch
+        {
+            Write-Host -ForegroundColor Red "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan all HBA was failed. Exception - $($error[0].Exception)"
+            
+            Return
+        }
+
+        try
+        {
+            Write-Host -ForegroundColor Yellow "`n$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan VMFS is started"
+            
+            $systemStorageView.RescanVmfs()
+
+            Write-Host -ForegroundColor Green "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan VMFS was finished"
+        }
+        catch
+        {
+            Write-Host -ForegroundColor Red "$iterrationCounter/$($hostViewList.Count)    $($hostView.Name)    Rescan VMFS was failed. Exception - $($error[0].Exception)"
+            
+            Return
+        }
+                 
+        Start-Sleep -Seconds 5
+
         $iterrationCounter++
     }
 }
