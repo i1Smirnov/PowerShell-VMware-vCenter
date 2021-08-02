@@ -5,9 +5,9 @@ begin
     [System.Collections.ArrayList]$alReport = [System.Collections.ArrayList]::New()
 
     ###############################################################
-    [System.String]$VIServer       = '10.7.30.10'
-    [System.String]$datacenterName = 'Datacenter-DC01-PROD-01'
-    [System.String]$sharePath      = '\\vdc01-mevum--01\t$\_Stat\'
+    [System.String]$VIServer       = ''
+    [System.String]$datacenterName = ''
+    [System.String]$sharePath      = ''
     ###############################################################
 
     [System.String]$executeDate      = (Get-Date -Format yyyy-MM-dd-HH-mm).ToString()
